@@ -7,17 +7,25 @@
  * has loaded. That way it is fast, it can be served from anywhere, and it is
  * never more than a minute out of date without needing a deployment to say so.
  *
- * Until a worker answers it draws sample data and says so. A status page that
- * cannot get an answer must admit it cannot get an answer.
+ * Incidents are the other half and work the other way round: they are files in
+ * this repository, rendered at build time. A monitor can say a thing stopped
+ * answering; only a person can say why.
  */
 
+import { getCollection } from "astro:content"
 import "../styles/theme.css"
+import Icon from "../components/Icon.astro"
 import Monitor from "../components/Monitor.astro"
 import { overall, sampleDays, sampleMonitors } from "../lib/api"
+import { outcome, severityState } from "../lib/incidents"
 
 const monitors = sampleMonitors()
 const days = Object.fromEntries(monitors.map((m) => [m.id, sampleDays(m.id)]))
 const state = overall(monitors)
+
+const incidents = (await getCollection("incidents")).sort(
+    (a, b) => b.data.started.getTime() - a.data.started.getTime(),
+)
 
 const HEADLINE: Record<string, string> = {
     up: "All systems operational",
@@ -26,6 +34,13 @@ const HEADLINE: Record<string, string> = {
     unknown: "Status unavailable",
 }
 
+const BANNER_ICON = {
+    up: "up",
+    degraded: "degraded",
+    down: "major",
+    unknown: "unknown",
+} as const
+
 /**
  * The two lines anyone forking this changes first.
  *
@@ -33,6 +48,18 @@ const HEADLINE: Record<string, string> = {
  * answers it. Point this at an origin if you host the two apart.
  */
 const site = { name: "Cordice", api: "" }
+
+/* Handed to the browser so an opened day can list what was happening on it
+   without another request. Dates as ISO strings, which is what a bar carries. */
+const incidentData = incidents.map((incident) => ({
+    id: incident.id,
+    title: incident.data.title,
+    state: severityState(incident.data.severity),
+    affected: incident.data.affected,
+    from: incident.data.started.toISOString().slice(0, 10),
+    to: (incident.data.resolved ?? new Date()).toISOString().slice(0, 10),
+    outcome: outcome(incident),
+}))
 ---
 
 <!doctype html>
@@ -45,12 +72,25 @@ const site = { name: "Cordice", api: "" }
             name="description"
             content={`Whether ${site.name} is working, checked from outside its own infrastructure.`}
         />
+        <link
+            rel="alternate"
+            type="application/rss+xml"
+            title={`${site.name} Status`}
+            href="/feed.xml"
+        />
+        <link
+            rel="alternate"
+            type="application/atom+xml"
+            title={`${site.name} Status`}
+            href="/atom.xml"
+        />
     </head>
     <body>
         <main>
             <section class="banner">
-                <span class:list={["mark", state]} data-mark aria-hidden="true"
-                ></span>
+                <span class="mark" data-mark>
+                    <Icon state={BANNER_ICON[state]} size={44} />
+                </span>
                 <h1 data-headline>{HEADLINE[state]}</h1>
                 <p class="when" data-when>Checking…</p>
             </section>
@@ -63,7 +103,11 @@ const site = { name: "Cordice", api: "" }
 
                 {
                     monitors.map((monitor) => (
-                        <Monitor monitor={monitor} days={days[monitor.id] ?? []} />
+                        <Monitor
+                            monitor={monitor}
+                            days={days[monitor.id] ?? []}
+                            incidents={incidents}
+                        />
                     ))
                 }
             </section>
@@ -71,15 +115,67 @@ const site = { name: "Cordice", api: "" }
             <p class="sample" data-sample>
                 Showing sample data — no reading has been received yet.
             </p>
+
+            <section class="panel">
+                <header class="panel-head">
+                    <h2>Past incidents</h2>
+                    <span class="window">Written by hand</span>
+                </header>
+
+                {
+                    incidents.length === 0 ? (
+                        <p class="none">Nothing has gone wrong yet.</p>
+                    ) : (
+                        <ul class="incident-list">
+                            {incidents.slice(0, 10).map((incident) => (
+                                <li>
+                                    <Icon
+                                        state={severityState(incident.data.severity)}
+                                        size={18}
+                                    />
+                                    <div>
+                                        <a href={`/incidents/${incident.id}/`}>
+                                            {incident.data.title}
+                                        </a>
+                                        <p>
+                                            {incident.data.started.toLocaleDateString(
+                                                "en-GB",
+                                                {
+                                                    day: "numeric",
+                                                    month: "long",
+                                                    year: "numeric",
+                                                },
+                                            )}
+                                            {" · "}
+                                            {outcome(incident)}
+                                        </p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    )
+                }
+            </section>
+
+            <footer class="foot">
+                <span>
+                    Subscribe: <a href="/feed.xml">RSS</a> ·
+                    <a href="/atom.xml">Atom</a>
+                </span>
+                <span>
+                    Watched by <a href="https://github.com/wearecordice/perch">Perch</a>
+                </span>
+            </footer>
         </main>
 
-        <script is:inline define:vars={{ api: site.api }}>
-            /* Corrects the page from the live worker.
+        <script is:inline define:vars={{ api: site.api, incidents: incidentData }}>
+            /* Two jobs: correct the page from the live worker, and open a day
+             * when a bar is clicked.
              *
-             * Everything it touches was already rendered, so a failure leaves
-             * the page as built rather than empty — and the sample notice
-             * stays up, which is the honest outcome when we cannot reach our
-             * own monitor. */
+             * Everything either touches was already rendered, so a failure
+             * leaves the page as built rather than empty — and the sample
+             * notice stays up, which is the honest outcome when we cannot
+             * reach our own monitor. */
             const HEADLINES = {
                 up: "All systems operational",
                 degraded: "Some services are degraded",
@@ -92,10 +188,21 @@ const site = { name: "Cordice", api: "" }
                 down: "Outage",
                 unknown: "No data",
             }
+            const HIGHEST = {
+                up: "Operational",
+                degraded: "Degraded performance",
+                down: "Major outage",
+                maintenance: "Maintenance",
+                unknown: "No data",
+            }
             const ORDER = ["up", "degraded", "down"]
+            const RANK = ["unknown", "up", "maintenance", "degraded", "down"]
+
+            /** Seconds between checks. Corrected by the worker's own answer. */
+            let interval = 300
 
             fetch(api + "/api/summary")
-                .then((response) => (response.ok ? response.json() : Promise.reject()))
+                .then((r) => (r.ok ? r.json() : Promise.reject()))
                 .then((data) => {
                     const known = data.monitors
                         .map((m) => m.state)
@@ -106,13 +213,13 @@ const site = { name: "Cordice", api: "" }
                           )
                         : "unknown"
 
-                    document.querySelector("[data-mark]").className = "mark " + worst
+                    paint(document.querySelector("[data-mark] svg"), worst)
                     document.querySelector("[data-headline]").textContent =
                         HEADLINES[worst]
 
                     const newest = Math.max(0, ...data.monitors.map((m) => m.at || 0))
                     document.querySelector("[data-when]").textContent = newest
-                        ? "Last checked " + new Date(newest * 1000).toLocaleString()
+                        ? "Last updated on " + new Date(newest * 1000).toLocaleString()
                         : "No reading yet"
 
                     for (const monitor of data.monitors) {
@@ -131,68 +238,67 @@ const site = { name: "Cordice", api: "" }
 
                     return fetch(api + "/api/history")
                 })
-                .then((response) => (response.ok ? response.json() : Promise.reject()))
+                .then((r) => (r.ok ? r.json() : Promise.reject()))
                 .then((data) => {
+                    if (data.interval) interval = data.interval
+
                     /* The strips are redrawn from real days, or the notice
                        stays. Leaving invented history under live readings
                        would be the page's own first lie. */
                     for (const [id, days] of Object.entries(data.monitors)) {
-                        const row = document.querySelector(
-                            '[data-monitor="' + id + '"]',
-                        )
-                        if (!row) continue
-                        redraw(row, days, data.days)
+                        const row = document.querySelector('[data-monitor="' + id + '"]')
+                        if (row) redraw(row, id, days, data.days)
                     }
                     document.querySelector("[data-sample]")?.remove()
                 })
                 .catch(() => {})
 
+            /** An icon's state lives in its class; swap it rather than redraw. */
+            function paint(icon, state) {
+                if (!icon) return
+                const shape = state === "down" ? "major" : state
+                icon.classList.remove("up", "degraded", "major", "maintenance", "unknown")
+                icon.classList.add(shape)
+            }
+
             /** Rebuilds one strip, padding the window so today is at the right. */
-            function redraw(row, days, window) {
-                const bars = row.querySelector(".bars")
+            function redraw(row, id, days, window) {
+                const bars = row.querySelector("[data-bars]")
                 if (!bars) return
 
                 const byDay = new Map(days.map((d) => [d.day, d]))
                 /* Cloned rather than created: Astro scopes its styles with a
-                   data-astro-cid attribute, and a span built from scratch
-                   carries none of it — the first version of this drew ninety
-                   invisible bars. */
+                   data attribute, and an element built from scratch carries
+                   none of it — the first version drew ninety invisible bars. */
                 const template = bars.firstElementChild
                 if (!template) return
 
                 bars.replaceChildren(
                     ...Array.from({ length: window }, (_, i) => {
-                        const date = new Date(
-                            Date.now() - (window - 1 - i) * 86400000,
-                        )
+                        const date = new Date(Date.now() - (window - 1 - i) * 86400000)
                             .toISOString()
                             .slice(0, 10)
-                        const day = byDay.get(date)
-                        const checks = day ? day.up + day.degraded + day.down : 0
-                        const state = !checks
-                            ? "unknown"
-                            : day.down
-                              ? "down"
-                              : day.degraded
-                                ? "degraded"
-                                : "up"
-
+                        const day = byDay.get(date) || {
+                            up: 0,
+                            degraded: 0,
+                            down: 0,
+                            ms: null,
+                        }
                         const bar = template.cloneNode(false)
-                        bar.classList.remove("up", "degraded", "down", "unknown")
-                        bar.classList.add(state)
-                        bar.title =
-                            date +
-                            (checks
-                                ? " — " + checks + " checks"
-                                : " — no data")
+                        bar.classList.remove("up", "degraded", "down", "maintenance")
+                        bar.classList.add(stateOf(id, date, day))
+                        bar.dataset.day = date
+                        bar.dataset.up = day.up
+                        bar.dataset.degraded = day.degraded
+                        bar.dataset.down = day.down
+                        bar.dataset.ms = day.ms ?? ""
+                        bar.setAttribute("aria-label", date + " — see this day")
+                        bar.removeAttribute("aria-expanded")
                         return bar
                     }),
                 )
 
-                const total = days.reduce(
-                    (n, d) => n + d.up + d.degraded + d.down,
-                    0,
-                )
+                const total = days.reduce((n, d) => n + d.up + d.degraded + d.down, 0)
                 const bad = days.reduce((n, d) => n + d.down, 0)
                 const share = row.querySelector(".share")
                 if (share) {
@@ -200,6 +306,144 @@ const site = { name: "Cordice", api: "" }
                         ? (((total - bad) / total) * 100).toFixed(2) + "% available"
                         : "No data yet"
                 }
+            }
+
+            /** Measured state, unless a written incident says worse. */
+            function stateOf(id, date, day) {
+                const checks = day.up + day.degraded + day.down
+                let state = !checks
+                    ? "unknown"
+                    : day.down
+                      ? "down"
+                      : day.degraded
+                        ? "degraded"
+                        : "up"
+
+                for (const incident of onDay(id, date)) {
+                    if (RANK.indexOf(incident.state) > RANK.indexOf(state)) {
+                        state = incident.state
+                    }
+                }
+                return state
+            }
+
+            const onDay = (id, date) =>
+                incidents.filter(
+                    (i) => i.affected.includes(id) && date >= i.from && date <= i.to,
+                )
+
+            /* Opening a day. One panel per service, reused by all its bars. */
+            document.addEventListener("click", (event) => {
+                const bar = event.target.closest("[data-bars] .bar")
+                if (!bar) return
+
+                const row = bar.closest("[data-monitor]")
+                const panel = row.querySelector("[data-day-panel]")
+                const wasOpen = bar.getAttribute("aria-expanded") === "true"
+
+                row.querySelectorAll(".bar[aria-expanded]").forEach((b) =>
+                    b.removeAttribute("aria-expanded"),
+                )
+
+                if (wasOpen) {
+                    panel.hidden = true
+                    return
+                }
+
+                bar.setAttribute("aria-expanded", "true")
+                fill(panel, row.dataset.monitor, bar.dataset)
+                panel.hidden = false
+            })
+
+            document.addEventListener("keydown", (event) => {
+                if (event.key !== "Escape") return
+                document.querySelectorAll(".bar[aria-expanded='true']").forEach((bar) => {
+                    bar.removeAttribute("aria-expanded")
+                    const row = bar.closest("[data-monitor]")
+                    row.querySelector("[data-day-panel]").hidden = true
+                })
+            })
+
+            function fill(panel, id, data) {
+                const up = Number(data.up || 0)
+                const degraded = Number(data.degraded || 0)
+                const down = Number(data.down || 0)
+                const checks = up + degraded + down
+
+                /* The same rule the bar above it follows: a day carrying a
+                   written incident is not reported as fine merely because the
+                   monitor was happy through it. Without this the strip and
+                   the panel it opens contradict each other, and the panel is
+                   the one the reader believes. */
+                const state = stateOf(id, data.day, {
+                    up: up,
+                    degraded: degraded,
+                    down: down,
+                })
+
+                const field = (name) =>
+                    panel.querySelector('[data-field="' + name + '"]')
+
+                field("date").textContent = new Date(
+                    data.day + "T00:00:00Z",
+                ).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    timeZone: "UTC",
+                })
+
+                /* Downtime is failed checks times the gap between them: the
+                   worst it could have been, and the only honest reading from
+                   sampling. A day nobody measured says so instead of "none". */
+                field("downtime").textContent = !checks
+                    ? "Not measured"
+                    : down === 0
+                      ? "None"
+                      : humanise(down * interval)
+
+                field("availability").textContent = !checks
+                    ? "—"
+                    : (((checks - down) / checks) * 100).toFixed(4) + "%"
+
+                const highest = field("highest")
+                highest.textContent = HIGHEST[state]
+                paint(highest.parentElement.querySelector("svg"), state)
+
+                const list = field("incidents")
+                list.replaceChildren(
+                    ...onDay(id, data.day).map((incident) => {
+                        const row = document.createElement("div")
+                        row.className = "row"
+
+                        const link = document.createElement("a")
+                        link.href = "/incidents/" + incident.id + "/"
+                        link.textContent = incident.title
+
+                        const leader = document.createElement("span")
+                        leader.className = "leader"
+
+                        const out = document.createElement("span")
+                        out.className = "outcome"
+                        out.textContent = incident.outcome
+
+                        row.append(link, leader, out)
+                        return row
+                    }),
+                )
+            }
+
+            function humanise(seconds) {
+                const minutes = Math.round(seconds / 60)
+                if (minutes < 60)
+                    return minutes + (minutes === 1 ? " minute" : " minutes")
+                const hours = Math.floor(minutes / 60)
+                const rest = minutes % 60
+                return (
+                    hours +
+                    (hours === 1 ? " hour" : " hours") +
+                    (rest ? " " + rest + " minutes" : "")
+                )
             }
         </script>
 
@@ -220,22 +464,7 @@ const site = { name: "Cordice", api: "" }
             .mark {
                 display: block;
                 width: 44px;
-                height: 44px;
                 margin: 0 auto 20px;
-                border-radius: var(--perch-radius-full);
-                background: var(--perch-empty);
-            }
-
-            .mark.up {
-                background: var(--perch-up);
-            }
-
-            .mark.degraded {
-                background: var(--perch-degraded);
-            }
-
-            .mark.down {
-                background: var(--perch-down);
             }
 
             h1 {
@@ -253,6 +482,10 @@ const site = { name: "Cordice", api: "" }
                 background: var(--perch-surface);
                 border-radius: var(--perch-radius);
                 padding: 24px;
+            }
+
+            .panel + .panel {
+                margin-top: 24px;
             }
 
             .panel-head {
@@ -273,8 +506,54 @@ const site = { name: "Cordice", api: "" }
             }
 
             .sample {
-                margin-top: 20px;
+                margin: 20px 0;
                 text-align: center;
+                color: var(--perch-fg-dim);
+                font-size: 13px;
+            }
+
+            .incident-list {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 18px;
+            }
+
+            .incident-list li {
+                display: flex;
+                gap: 12px;
+                align-items: flex-start;
+            }
+
+            .incident-list a {
+                color: var(--perch-fg);
+                font-weight: 550;
+                font-size: 15px;
+            }
+
+            .incident-list a:hover {
+                color: var(--perch-accent);
+            }
+
+            .incident-list p {
+                margin-top: 2px;
+                color: var(--perch-fg-dim);
+                font-size: 13px;
+            }
+
+            .none {
+                color: var(--perch-fg-dim);
+                font-size: 14px;
+            }
+
+            .foot {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: space-between;
+                gap: 8px 24px;
+                margin-top: 32px;
                 color: var(--perch-fg-dim);
                 font-size: 13px;
             }

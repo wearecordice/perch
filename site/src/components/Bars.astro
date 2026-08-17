@@ -1,54 +1,83 @@
 ---
 /**
- * Ninety days of one service, as a strip.
+ * Ninety days of one service, as a strip you can interrogate.
  *
  * The bar is the whole idea of a status page: a number tells you about today,
  * a strip tells you whether today is normal. Each bar is a day, oldest at the
  * left, and its colour is the worst thing that happened in it — one bad hour
  * should not be averaged into invisibility.
  *
- * A day with nothing recorded is drawn in the empty colour rather than green.
- * Most pages quietly fill that gap with "up", which turns "we were not
- * watching" into "nothing was wrong", and those are not the same sentence.
+ * A day with nothing recorded is drawn in the empty colour, not green. Most
+ * pages fill that gap with "up", which turns "we were not watching" into
+ * "nothing was wrong". They are not the same sentence, and a new monitor's
+ * first weeks are entirely that gap.
  *
- * The strip narrows by dropping days on small screens rather than by squeezing
- * them: below about a pixel a bar stops being readable and the strip turns
- * into a smear.
+ * Every bar is a button. A strip you can only look at answers "was there a bad
+ * day"; one you can open answers "what happened on it", which is the question
+ * anybody who spotted the red mark actually has. The day's figures ride on the
+ * element as data attributes so opening one costs no request — and so the
+ * client-side redraw, which replaces these with live days, can carry the same
+ * ones.
  */
 
 import type { Day } from "../lib/api"
 import { stateOfDay } from "../lib/api"
+import type { Incident } from "../lib/incidents"
+import { activeOn, severityState, worse } from "../lib/incidents"
 
 interface Props {
     days: Day[]
     label: string
+    incidents?: Incident[]
 }
 
-const { days, label } = Astro.props
+const { days, label, incidents = [] } = Astro.props
 
 const formatDay = (iso: string) =>
     new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", {
         day: "numeric",
         month: "short",
+        year: "numeric",
         timeZone: "UTC",
     })
 
-/** What each bar says when pointed at, since colour alone is not an answer. */
-const title = (day: Day) => {
-    const total = day.up + day.degraded + day.down
-    if (total === 0) return `${formatDay(day.day)} — no data`
-    if (day.down > 0)
-        return `${formatDay(day.day)} — down for ${day.down} of ${total} checks`
-    if (day.degraded > 0)
-        return `${formatDay(day.day)} — degraded for ${day.degraded} of ${total} checks`
-    return `${formatDay(day.day)} — no problems`
+/**
+ * The colour of a day is the worse of what was measured and what was declared.
+ *
+ * A monitor can be perfectly happy through a fault only a person could see —
+ * the wrong content served with a 200, a feature switched off — so a day that
+ * carries a written incident is never drawn green.
+ */
+function stateFor(day: Day) {
+    const measured = stateOfDay(day)
+    const declared = incidents.filter((i) => activeOn(i, day.day))
+    if (declared.length === 0) return measured
+
+    const severity = declared
+        .map((i) => i.data.severity)
+        .reduce((a, b) => worse(a, b))
+    const fromIncident = severityState(severity)
+
+    const RANK = ["unknown", "up", "maintenance", "degraded", "down"]
+    return RANK.indexOf(fromIncident) > RANK.indexOf(measured)
+        ? fromIncident
+        : measured
 }
 ---
 
-<div class="bars" role="img" aria-label={label}>
+<div class="bars" data-bars aria-label={label}>
     {
         days.map((day) => (
-            <span class:list={["bar", stateOfDay(day)]} title={title(day)} />
+            <button
+                type="button"
+                class:list={["bar", stateFor(day)]}
+                data-day={day.day}
+                data-up={day.up}
+                data-degraded={day.degraded}
+                data-down={day.down}
+                data-ms={day.ms ?? ""}
+                aria-label={`${formatDay(day.day)} — see this day`}
+            />
         ))
     }
 </div>
@@ -66,8 +95,11 @@ const title = (day: Day) => {
         /* Without this a long label in a neighbouring column can push the
            strip wider than its container and the whole row scrolls. */
         min-width: 0;
+        padding: 0;
+        border: none;
         border-radius: var(--perch-bar-radius);
         background: var(--perch-empty);
+        cursor: pointer;
         transition: opacity var(--perch-duration) var(--perch-ease);
     }
 
@@ -77,8 +109,15 @@ const title = (day: Day) => {
         opacity: 0.45;
     }
 
-    .bars .bar:hover {
+    .bars .bar:hover,
+    .bars .bar[aria-expanded="true"] {
         opacity: 1;
+    }
+
+    /* The open day stays lit while the panel below it is being read. */
+    .bar[aria-expanded="true"] {
+        outline: 2px solid var(--perch-fg-muted);
+        outline-offset: 2px;
     }
 
     .up {
@@ -91,6 +130,10 @@ const title = (day: Day) => {
 
     .down {
         background: var(--perch-down);
+    }
+
+    .maintenance {
+        background: var(--perch-accent);
     }
 
     /* Fewer days rather than thinner bars. The oldest go first, because the

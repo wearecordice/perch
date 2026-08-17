@@ -1,25 +1,30 @@
 ---
 /**
- * One service: what it is, how it is, and how it has been.
+ * One service: what it is, how it is, how it has been, and what happened on
+ * any day you point at.
  *
  * The state is written as a word at the right as well as coloured, because a
  * page whose only signal is colour is a page a colour-blind reader cannot use
- * — and this is the page they will be reading precisely when something is
- * wrong and they are in a hurry.
+ * — and this is the page they open precisely when something is wrong and they
+ * are in a hurry.
  *
  * data-monitor is what the live correction finds the row by; keep it.
  */
 
 import type { Day, MonitorSummary } from "../lib/api"
 import { availability } from "../lib/api"
+import type { Incident } from "../lib/incidents"
+import { forMonitor, outcome, severityState } from "../lib/incidents"
 import Bars from "./Bars.astro"
+import Icon from "./Icon.astro"
 
 interface Props {
     monitor: MonitorSummary
     days: Day[]
+    incidents?: Incident[]
 }
 
-const { monitor, days } = Astro.props
+const { monitor, days, incidents = [] } = Astro.props
 
 const WORDS: Record<string, string> = {
     up: "Operational",
@@ -28,6 +33,7 @@ const WORDS: Record<string, string> = {
     unknown: "No data",
 }
 
+const mine = forMonitor(incidents, monitor.id)
 const share = availability(days)
 const window = days.length
 ---
@@ -44,7 +50,7 @@ const window = days.length
         <span class:list={["state", monitor.state]}>{WORDS[monitor.state]}</span>
     </header>
 
-    <Bars days={days} label={`${monitor.name}: the last ${window} days`} />
+    <Bars days={days} incidents={mine} label={`${monitor.name}: the last ${window} days`} />
 
     <footer>
         <span>{window} days ago</span>
@@ -53,6 +59,40 @@ const window = days.length
         </span>
         <span>Today</span>
     </footer>
+
+    {/*
+      The panel a day opens into. Rendered empty and filled by script: it is
+      one element reused by ninety bars rather than ninety hidden panels, and
+      a page that ships ninety of anything per service is a page that stops
+      being quick to open.
+    */}
+    <div class="day" data-day-panel hidden>
+        <dl>
+            <div><dt>Date</dt><dd data-field="date">—</dd></div>
+            <div><dt>Downtime</dt><dd data-field="downtime">—</dd></div>
+            <div><dt>Availability</dt><dd data-field="availability">—</dd></div>
+            <div>
+                <dt>Highest status</dt>
+                <dd class="highest"><span data-field="highest">—</span></dd>
+            </div>
+        </dl>
+        <div class="day-incidents" data-field="incidents"></div>
+    </div>
+
+    {
+        mine.length > 0 && (
+            <ul class="incidents">
+                {mine.slice(0, 3).map((incident) => (
+                    <li>
+                        <Icon state={severityState(incident.data.severity)} size={16} />
+                        <a href={`/incidents/${incident.id}/`}>{incident.data.title}</a>
+                        <span class="leader" aria-hidden="true" />
+                        <span class="outcome">{outcome(incident)}</span>
+                    </li>
+                ))}
+            </ul>
+        )
+    }
 </article>
 
 <style>
@@ -125,6 +165,88 @@ const window = days.length
        there to say what the strip spans. */
     .share {
         color: var(--perch-fg-muted);
+    }
+
+    /* The opened day. Four figures, because those are the four questions
+       somebody who just clicked a red mark is asking, in that order. */
+    .day {
+        margin-top: 14px;
+    }
+
+    .day dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+    }
+
+    .day dl > div {
+        background: var(--perch-surface-high);
+        border-radius: 10px;
+        padding: 12px 14px;
+    }
+
+    .day dt {
+        color: var(--perch-fg-dim);
+        font-size: 12px;
+    }
+
+    .day dd {
+        margin: 4px 0 0;
+        font-size: 14px;
+        font-weight: 550;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .highest {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+    }
+
+    .day-incidents:not(:empty) {
+        margin-top: 12px;
+    }
+
+    /* The incident rows, under the day and under the service. A dotted leader
+       ties a title on the left to its outcome on the right without a table. */
+    .incidents,
+    .day-incidents {
+        list-style: none;
+        margin: 12px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .incidents li,
+    .day-incidents :global(.row) {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+    }
+
+    .leader,
+    .day-incidents :global(.leader) {
+        flex: 1;
+        border-bottom: 1px dotted var(--perch-surface-high);
+        min-width: 20px;
+    }
+
+    .outcome,
+    .day-incidents :global(.outcome) {
+        flex: none;
+        color: var(--perch-fg-dim);
+    }
+
+    .incidents a {
+        color: var(--perch-fg);
+    }
+
+    .incidents a:hover {
+        color: var(--perch-accent);
     }
 
     @media (max-width: 600px) {

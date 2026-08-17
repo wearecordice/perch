@@ -15,6 +15,15 @@ export interface Env {
    than measuring. */
 const PRUNE_AT_HOUR = 3
 
+/**
+ * Seconds between checks, matching the cron in wrangler.toml.
+ *
+ * Reported to whatever draws the history, which needs it to turn a count of
+ * failed checks into a length of time. Keep the two in step: a page told the
+ * wrong interval will state a downtime with great confidence and be wrong.
+ */
+const INTERVAL_SECONDS = 300
+
 export default {
     /** The cron. Everything Perch knows, it learns here. */
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -86,7 +95,7 @@ export default {
             for (const monitor of monitors) {
                 all[monitor.id] = await history(env.DB, monitor.id, days)
             }
-            return json({ days, monitors: all })
+            return json({ days, interval: INTERVAL_SECONDS, monitors: all })
         }
 
         return json({ error: "not found" }, 404)

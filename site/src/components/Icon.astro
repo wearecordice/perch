@@ -1,0 +1,127 @@
+---
+/**
+ * The small round glyphs that carry state.
+ *
+ * Drawn rather than set in a font, and never an emoji: an emoji is rendered by
+ * the reader's system, which means the one thing on the page that has to look
+ * deliberate is the one thing that looks different on every machine — and on
+ * some of them, cheerful.
+ *
+ * Each is a filled disc with a mark cut through it in the page's background
+ * colour, so the shape reads at 16px as well as at 44. The mark matters:
+ * colour alone is not a signal a colour-blind reader can use, and a tick, a
+ * bang and a slash are distinguishable without any colour at all.
+ */
+
+interface Props {
+    state: "up" | "degraded" | "partial" | "major" | "down" | "maintenance" | "unknown"
+    size?: number
+    /** Set when the icon is the only thing saying this; left off beside words. */
+    label?: string
+}
+
+const { state, size = 20, label } = Astro.props
+
+/* partial and degraded look the same on purpose: both mean "working, badly",
+   and a reader does not need two shapes for one idea. */
+const SHAPE = {
+    up: "tick",
+    degraded: "bang",
+    partial: "bang",
+    major: "slash",
+    down: "slash",
+    maintenance: "clock",
+    unknown: "dash",
+} as const
+
+const shape = SHAPE[state]
+---
+
+<svg
+    class:list={["icon", state]}
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    role={label ? "img" : undefined}
+    aria-label={label}
+    aria-hidden={label ? undefined : "true"}
+>
+    <circle cx="12" cy="12" r="12" class="disc"></circle>
+
+    {/*
+      Every mark is drawn and all but one hidden by CSS, rather than only the
+      right one being rendered.
+
+      The state of an icon changes after the page has loaded — the banner is
+      built from whatever the last deploy knew and corrected the moment the
+      worker answers. If the glyph were baked in at build time, swapping the
+      class would repaint the disc and leave the wrong symbol on it: a green
+      circle with an exclamation mark in it, which is exactly what the first
+      version shipped.
+    */}
+    <path class="mark tick" d="M7 12.4l3.2 3.2L17 8.8" />
+    <path class="mark bang" d="M12 6.6v7.2M12 17.4v.2" />
+    <path class="mark slash" d="M8 8l8 8M16 8l-8 8" />
+    <path class="mark clock" d="M12 6.8V12l3.4 2" />
+    <path class="mark dash" d="M8 12h8" />
+</svg>
+
+<style>
+    .icon {
+        display: block;
+        flex: none;
+    }
+
+    .mark {
+        display: none;
+        fill: none;
+        stroke-width: 2.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        /* Cut in the page's own background rather than in white, so the glyph
+           sits in the surface instead of on top of it. */
+        stroke: var(--perch-bg);
+    }
+
+    /* partial and degraded share a mark on purpose: both mean "working,
+       badly", and a reader does not need two shapes for one idea. */
+    .up .tick,
+    .degraded .bang,
+    .partial .bang,
+    .major .slash,
+    .down .slash,
+    .maintenance .clock,
+    .unknown .dash {
+        display: block;
+    }
+
+    .bang {
+        stroke-width: 2.4;
+    }
+
+    .up .disc {
+        fill: var(--perch-up);
+    }
+
+    .degraded .disc,
+    .partial .disc {
+        fill: var(--perch-degraded);
+    }
+
+    .major .disc,
+    .down .disc {
+        fill: var(--perch-down);
+    }
+
+    .maintenance .disc {
+        fill: var(--perch-accent);
+    }
+
+    .unknown .disc {
+        fill: var(--perch-empty);
+    }
+
+    .unknown .mark {
+        stroke: var(--perch-fg-dim);
+    }
+</style>

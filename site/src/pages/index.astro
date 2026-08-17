@@ -294,6 +294,8 @@ const incidentData = incidents.map((incident) => ({
                         bar.dataset.ms = day.ms ?? ""
                         bar.setAttribute("aria-label", date + " — see this day")
                         bar.removeAttribute("aria-expanded")
+                        bar.removeAttribute("data-showing")
+                        bar.removeAttribute("data-pinned")
                         return bar
                     }),
                 )
@@ -332,34 +334,93 @@ const incidentData = incidents.map((incident) => ({
                     (i) => i.affected.includes(id) && date >= i.from && date <= i.to,
                 )
 
-            /* Opening a day. One panel per service, reused by all its bars. */
+            /* Opening a day. One panel per service, reused by all its bars.
+             *
+             * Pointing at a bar shows it and clicking pins it there. Hover
+             * alone would be no good — the panel carries links, and reaching
+             * for one would take the pointer off the bar that summoned it. A
+             * click alone is worse: ninety days is a lot to click through to
+             * find out that eighty-nine of them are dull. So the preview
+             * follows the pointer and survives anywhere inside the service's
+             * own row, and a click nails it down until you click again.
+             *
+             * data-showing is the day the panel is displaying; data-pinned is
+             * the one it returns to when the pointer wanders off.
+             * aria-expanded stays truthful about whether the panel is open, so
+             * a screen reader hears a disclosure rather than a mystery. */
+            const rowOf = (element) => element.closest("[data-monitor]")
+
+            function show(row, bar) {
+                const panel = row.querySelector("[data-day-panel]")
+                clear(row)
+                bar.setAttribute("data-showing", "")
+                bar.setAttribute("aria-expanded", "true")
+                fill(panel, row.dataset.monitor, bar.dataset)
+                panel.hidden = false
+            }
+
+            function clear(row) {
+                row.querySelectorAll(".bar[data-showing]").forEach((b) => {
+                    b.removeAttribute("data-showing")
+                    b.removeAttribute("aria-expanded")
+                })
+            }
+
+            /* Back to the pinned day, or to nothing if none was pinned. */
+            function restore(row) {
+                const pinned = row.querySelector(".bar[data-pinned]")
+                if (pinned) {
+                    show(row, pinned)
+                    return
+                }
+                clear(row)
+                row.querySelector("[data-day-panel]").hidden = true
+                row.querySelectorAll(".incidents li[data-in-panel]").forEach((item) =>
+                    item.removeAttribute("data-in-panel"),
+                )
+            }
+
+            const preview = (event) => {
+                const bar = event.target.closest?.("[data-bars] .bar")
+                if (bar) show(rowOf(bar), bar)
+            }
+
+            const leave = (event) => {
+                const row = event.target.closest?.("[data-monitor]")
+                if (!row || row.contains(event.relatedTarget)) return
+                restore(row)
+            }
+
+            document.addEventListener("pointerover", preview)
+            document.addEventListener("pointerout", leave)
+            /* Keyboard gets the same thing: a focused bar is a pointed-at one. */
+            document.addEventListener("focusin", preview)
+            document.addEventListener("focusout", leave)
+
             document.addEventListener("click", (event) => {
                 const bar = event.target.closest("[data-bars] .bar")
                 if (!bar) return
 
-                const row = bar.closest("[data-monitor]")
-                const panel = row.querySelector("[data-day-panel]")
-                const wasOpen = bar.getAttribute("aria-expanded") === "true"
+                const row = rowOf(bar)
+                const wasPinned = bar.hasAttribute("data-pinned")
 
-                row.querySelectorAll(".bar[aria-expanded]").forEach((b) =>
-                    b.removeAttribute("aria-expanded"),
+                row.querySelectorAll(".bar[data-pinned]").forEach((b) =>
+                    b.removeAttribute("data-pinned"),
                 )
 
-                if (wasOpen) {
-                    panel.hidden = true
-                    return
-                }
-
-                bar.setAttribute("aria-expanded", "true")
-                fill(panel, row.dataset.monitor, bar.dataset)
-                panel.hidden = false
+                /* Clicking the pinned day unpins it but leaves it on screen —
+                   the pointer is still on that bar, and yanking the panel away
+                   from under it would read as a fault rather than a choice. */
+                if (!wasPinned) bar.setAttribute("data-pinned", "")
+                show(row, bar)
             })
 
             document.addEventListener("keydown", (event) => {
                 if (event.key !== "Escape") return
-                document.querySelectorAll(".bar[aria-expanded='true']").forEach((bar) => {
-                    bar.removeAttribute("aria-expanded")
-                    const row = bar.closest("[data-monitor]")
+                document.querySelectorAll(".bar[data-pinned]").forEach((bar) => {
+                    bar.removeAttribute("data-pinned")
+                    const row = rowOf(bar)
+                    clear(row)
                     row.querySelector("[data-day-panel]").hidden = true
                 })
             })
@@ -411,8 +472,22 @@ const incidentData = incidents.map((incident) => ({
                 paint(highest.parentElement.querySelector("svg"), state)
 
                 const list = field("incidents")
+                const shown = onDay(id, data.day)
+
+                /* An incident named in the panel is struck from the service's
+                   own list underneath it, so the same sentence is never
+                   printed twice, one line apart. Sweeping the strip moves the
+                   line between the two lists rather than duplicating it. */
+                const own = panel.closest("[data-monitor]").querySelectorAll(".incidents li[data-incident]")
+                own.forEach((item) =>
+                    item.toggleAttribute(
+                        "data-in-panel",
+                        shown.some((i) => i.id === item.dataset.incident),
+                    ),
+                )
+
                 list.replaceChildren(
-                    ...onDay(id, data.day).map((incident) => {
+                    ...shown.map((incident) => {
                         const row = document.createElement("div")
                         row.className = "row"
 

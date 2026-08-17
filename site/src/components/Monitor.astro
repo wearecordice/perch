@@ -83,7 +83,7 @@ const window = days.length
         mine.length > 0 && (
             <ul class="incidents">
                 {mine.slice(0, 3).map((incident) => (
-                    <li>
+                    <li data-incident={incident.id}>
                         <Icon state={severityState(incident.data.severity)} size={16} />
                         <a href={`/incidents/${incident.id}/`}>{incident.data.title}</a>
                         <span class="leader" aria-hidden="true" />
@@ -218,6 +218,11 @@ const window = days.length
         display: flex;
         flex-direction: column;
         gap: 10px;
+    }
+
+    /* Hidden while the open day is saying the same thing above. */
+    .incidents li[data-in-panel] {
+        display: none;
     }
 
     .incidents li,

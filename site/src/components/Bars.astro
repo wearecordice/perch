@@ -88,6 +88,10 @@ function stateFor(day: Day) {
         gap: var(--perch-bar-gap);
         align-items: stretch;
         height: var(--perch-bar-height);
+        /* Room for the picked day to stand up in. Without it the bar grows
+           into the row above and the strip looks like it has come loose. */
+        padding-block: 5px;
+        margin-block: -5px;
     }
 
     .bar {
@@ -100,7 +104,9 @@ function stateFor(day: Day) {
         border-radius: var(--perch-bar-radius);
         background: var(--perch-empty);
         cursor: pointer;
-        transition: opacity var(--perch-duration) var(--perch-ease);
+        transition:
+            opacity var(--perch-duration) var(--perch-ease),
+            transform var(--perch-duration) var(--perch-ease);
     }
 
     /* Pointing at the strip dims it and lights the day under the cursor, so a
@@ -110,14 +116,21 @@ function stateFor(day: Day) {
     }
 
     .bars .bar:hover,
-    .bars .bar[aria-expanded="true"] {
+    .bars .bar[data-showing] {
         opacity: 1;
     }
 
-    /* The open day stays lit while the panel below it is being read. */
-    .bar[aria-expanded="true"] {
-        outline: 2px solid var(--perch-fg-muted);
-        outline-offset: 2px;
+    /* A pinned day stands slightly taller rather than being ringed.
+     *
+     * A ring is the obvious way and the wrong one here: an outline is drawn
+     * outside the box, so on a bar six pixels wide in a strip with no room
+     * above it, it escapes as a capsule floating over the row. A bar that
+     * stands up says the same thing inside its own space — and it says it
+     * without colour, which the lit-versus-dimmed treatment cannot do on the
+     * pinned day once the pointer has left the strip and nothing is dimmed. */
+    .bar[data-pinned] {
+        transform: scaleY(1.16);
+        opacity: 1;
     }
 
     .up {

@@ -1,0 +1,209 @@
+---
+/**
+ * The status page.
+ *
+ * Built as static HTML and then corrected by the browser: the page ships with
+ * whatever the last build knew and asks Perch for the current readings once it
+ * has loaded. That way it is fast, it can be served from anywhere, and it is
+ * never more than a minute out of date without needing a deployment to say so.
+ *
+ * Until a worker answers it draws sample data and says so. A status page that
+ * cannot get an answer must admit it cannot get an answer.
+ */
+
+import "../styles/theme.css"
+import Monitor from "../components/Monitor.astro"
+import { overall, sampleDays, sampleMonitors } from "../lib/api"
+
+const monitors = sampleMonitors()
+const days = Object.fromEntries(monitors.map((m) => [m.id, sampleDays(m.id)]))
+const state = overall(monitors)
+
+const HEADLINE: Record<string, string> = {
+    up: "All systems operational",
+    degraded: "Some services are degraded",
+    down: "Major outage",
+    unknown: "Status unavailable",
+}
+
+/** The two lines anyone forking this changes first. */
+const site = { name: "Cordice", api: "https://perch.cordice.org" }
+---
+
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>{site.name} Status</title>
+        <meta
+            name="description"
+            content={`Whether ${site.name} is working, checked from outside its own infrastructure.`}
+        />
+    </head>
+    <body>
+        <main>
+            <section class="banner">
+                <span class:list={["mark", state]} data-mark aria-hidden="true"
+                ></span>
+                <h1 data-headline>{HEADLINE[state]}</h1>
+                <p class="when" data-when>Checking…</p>
+            </section>
+
+            <section class="panel">
+                <header class="panel-head">
+                    <h2>System status</h2>
+                    <span class="window">Last 90 days</span>
+                </header>
+
+                {
+                    monitors.map((monitor) => (
+                        <Monitor monitor={monitor} days={days[monitor.id] ?? []} />
+                    ))
+                }
+            </section>
+
+            <p class="sample" data-sample>
+                Showing sample data — no reading has been received yet.
+            </p>
+        </main>
+
+        <script is:inline define:vars={{ api: site.api }}>
+            /* Corrects the page from the live worker.
+             *
+             * Everything it touches was already rendered, so a failure leaves
+             * the page as built rather than empty — and the sample notice
+             * stays up, which is the honest outcome when we cannot reach our
+             * own monitor. */
+            const HEADLINES = {
+                up: "All systems operational",
+                degraded: "Some services are degraded",
+                down: "Major outage",
+                unknown: "Status unavailable",
+            }
+            const WORDS = {
+                up: "Operational",
+                degraded: "Degraded",
+                down: "Outage",
+                unknown: "No data",
+            }
+            const ORDER = ["up", "degraded", "down"]
+
+            fetch(api + "/api/summary")
+                .then((response) => (response.ok ? response.json() : Promise.reject()))
+                .then((data) => {
+                    const known = data.monitors
+                        .map((m) => m.state)
+                        .filter((s) => ORDER.includes(s))
+                    const worst = known.length
+                        ? known.reduce((a, b) =>
+                              ORDER.indexOf(b) > ORDER.indexOf(a) ? b : a,
+                          )
+                        : "unknown"
+
+                    document.querySelector("[data-mark]").className = "mark " + worst
+                    document.querySelector("[data-headline]").textContent =
+                        HEADLINES[worst]
+
+                    const newest = Math.max(0, ...data.monitors.map((m) => m.at || 0))
+                    document.querySelector("[data-when]").textContent = newest
+                        ? "Last checked " + new Date(newest * 1000).toLocaleString()
+                        : "No reading yet"
+
+                    for (const monitor of data.monitors) {
+                        const row = document.querySelector(
+                            '[data-monitor="' + monitor.id + '"]',
+                        )
+                        if (!row) continue
+
+                        const state = row.querySelector(".state")
+                        state.className = "state " + monitor.state
+                        state.textContent = WORDS[monitor.state]
+
+                        const ms = row.querySelector(".ms")
+                        if (ms && monitor.ms !== null) ms.textContent = monitor.ms + " ms"
+                    }
+
+                    document.querySelector("[data-sample]")?.remove()
+                })
+                .catch(() => {})
+        </script>
+
+        <style>
+            main {
+                max-width: var(--perch-measure);
+                margin: 0 auto;
+                padding: 72px 24px 96px;
+            }
+
+            /* The banner. The one thing a reader came for, and the only place
+               on the page where type is allowed to be large. */
+            .banner {
+                text-align: center;
+                margin-bottom: 56px;
+            }
+
+            .mark {
+                display: block;
+                width: 44px;
+                height: 44px;
+                margin: 0 auto 20px;
+                border-radius: var(--perch-radius-full);
+                background: var(--perch-empty);
+            }
+
+            .mark.up {
+                background: var(--perch-up);
+            }
+
+            .mark.degraded {
+                background: var(--perch-degraded);
+            }
+
+            .mark.down {
+                background: var(--perch-down);
+            }
+
+            h1 {
+                font-size: clamp(1.75rem, 4vw, 2.25rem);
+                letter-spacing: -0.03em;
+            }
+
+            .when {
+                margin-top: 10px;
+                color: var(--perch-fg-dim);
+                font-size: 14px;
+            }
+
+            .panel {
+                background: var(--perch-surface);
+                border-radius: var(--perch-radius);
+                padding: 24px;
+            }
+
+            .panel-head {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 16px;
+                margin-bottom: 24px;
+            }
+
+            h2 {
+                font-size: 16px;
+            }
+
+            .window {
+                color: var(--perch-fg-dim);
+                font-size: 13px;
+            }
+
+            .sample {
+                margin-top: 20px;
+                text-align: center;
+                color: var(--perch-fg-dim);
+                font-size: 13px;
+            }
+        </style>
+    </body>
+</html>

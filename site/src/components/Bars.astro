@@ -1,0 +1,109 @@
+---
+/**
+ * Ninety days of one service, as a strip.
+ *
+ * The bar is the whole idea of a status page: a number tells you about today,
+ * a strip tells you whether today is normal. Each bar is a day, oldest at the
+ * left, and its colour is the worst thing that happened in it — one bad hour
+ * should not be averaged into invisibility.
+ *
+ * A day with nothing recorded is drawn in the empty colour rather than green.
+ * Most pages quietly fill that gap with "up", which turns "we were not
+ * watching" into "nothing was wrong", and those are not the same sentence.
+ *
+ * The strip narrows by dropping days on small screens rather than by squeezing
+ * them: below about a pixel a bar stops being readable and the strip turns
+ * into a smear.
+ */
+
+import type { Day } from "../lib/api"
+import { stateOfDay } from "../lib/api"
+
+interface Props {
+    days: Day[]
+    label: string
+}
+
+const { days, label } = Astro.props
+
+const formatDay = (iso: string) =>
+    new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        timeZone: "UTC",
+    })
+
+/** What each bar says when pointed at, since colour alone is not an answer. */
+const title = (day: Day) => {
+    const total = day.up + day.degraded + day.down
+    if (total === 0) return `${formatDay(day.day)} — no data`
+    if (day.down > 0)
+        return `${formatDay(day.day)} — down for ${day.down} of ${total} checks`
+    if (day.degraded > 0)
+        return `${formatDay(day.day)} — degraded for ${day.degraded} of ${total} checks`
+    return `${formatDay(day.day)} — no problems`
+}
+---
+
+<div class="bars" role="img" aria-label={label}>
+    {
+        days.map((day) => (
+            <span class:list={["bar", stateOfDay(day)]} title={title(day)} />
+        ))
+    }
+</div>
+
+<style>
+    .bars {
+        display: flex;
+        gap: var(--perch-bar-gap);
+        align-items: stretch;
+        height: var(--perch-bar-height);
+    }
+
+    .bar {
+        flex: 1 1 0;
+        /* Without this a long label in a neighbouring column can push the
+           strip wider than its container and the whole row scrolls. */
+        min-width: 0;
+        border-radius: var(--perch-bar-radius);
+        background: var(--perch-empty);
+        transition: opacity var(--perch-duration) var(--perch-ease);
+    }
+
+    /* Pointing at the strip dims it and lights the day under the cursor, so a
+       single day can be picked out of ninety without a legend. */
+    .bars:hover .bar {
+        opacity: 0.45;
+    }
+
+    .bars .bar:hover {
+        opacity: 1;
+    }
+
+    .up {
+        background: var(--perch-up);
+    }
+
+    .degraded {
+        background: var(--perch-degraded);
+    }
+
+    .down {
+        background: var(--perch-down);
+    }
+
+    /* Fewer days rather than thinner bars. The oldest go first, because the
+       question a narrow screen is asking is "is it working now". */
+    @media (max-width: 900px) {
+        .bar:nth-child(-n + 30) {
+            display: none;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .bar:nth-child(-n + 60) {
+            display: none;
+        }
+    }
+</style>

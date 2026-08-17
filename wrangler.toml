@@ -6,6 +6,19 @@ compatibility_date = "2026-08-01"
 # every tcp monitor fails in a way that looks like the service is down.
 compatibility_flags = ["nodejs_compat"]
 
+# No workers.dev address. The read API is served from a name we own, which is
+# the same reason the fonts on the site it feeds are self-hosted: one origin,
+# and no reader handed to somebody else's domain to find out whether we are up.
+#
+# Cloudflare still requires the account to have registered a workers.dev
+# subdomain before it will accept a cron schedule, even when nothing is
+# published there. Registering one is a prerequisite, not a destination.
+workers_dev = false
+
+[[routes]]
+pattern = "perch.cordice.org"
+custom_domain = true
+
 # Every five minutes, which is what the tools this replaces do and therefore
 # what makes a fair comparison while all three are running. Cron will go no
 # finer than a minute, and a minute is rarely worth four times the writes.
@@ -21,5 +34,5 @@ PERCH_RETENTION_DAYS = "90"
 [[d1_databases]]
 binding = "DB"
 database_name = "perch"
-# Filled in by `wrangler d1 create perch`.
-database_id = "REPLACE_ME"
+# From `wrangler d1 create perch`. Yours will differ.
+database_id = "6cb1bee4-6dfa-481a-8222-f6fcd0bddb0a"

@@ -20,9 +20,21 @@ export default {
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
         const region = env.PERCH_REGION ?? "auto"
 
-        /* All at once. Ten monitors run in about as long as the slowest, and
-           a run that took ten timeouts in series would overlap the next one. */
-        const results = await Promise.all(monitors.map((m) => probe(m, region)))
+        /* One at a time, which is slower and more honest.
+         *
+         * Running them at once made every reading agree with every other and
+         * all of them wrong: ten simultaneous requests contend, and the clock
+         * in this runtime does not advance except at I/O, so probes that
+         * finished later inherited the wait of the ones ahead of them. The
+         * first run of this worker reported 1.2 to 1.9 seconds for services
+         * that answer in 20 to 120ms, in near-perfect array order.
+         *
+         * A run of ten takes a few seconds of the five minutes it has, and
+         * the number recorded is the service's own. */
+        const results = []
+        for (const monitor of monitors) {
+            results.push(await probe(monitor, region))
+        }
         await record(env.DB, results)
 
         if (new Date(event.scheduledTime).getUTCHours() === PRUNE_AT_HOUR) {

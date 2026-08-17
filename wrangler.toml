@@ -22,6 +22,15 @@ custom_domain = true
 # Every five minutes, which is what the tools this replaces do and therefore
 # what makes a fair comparison while all three are running. Cron will go no
 # finer than a minute, and a minute is rarely worth four times the writes.
+# The built status page, served from the same name as the API it reads.
+#
+# Assets are matched first; anything that is not a file falls through to the
+# worker, which is how /api/* still reaches code. One host means the page can
+# ask for "/api/summary" with no origin in front of it, and moving Perch to a
+# domain of its own is then a change to one name and nothing else.
+[assets]
+directory = "./site/dist"
+
 [triggers]
 crons = ["*/5 * * * *"]
 

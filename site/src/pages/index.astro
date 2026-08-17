@@ -26,8 +26,13 @@ const HEADLINE: Record<string, string> = {
     unknown: "Status unavailable",
 }
 
-/** The two lines anyone forking this changes first. */
-const site = { name: "Cordice", api: "https://perch.cordice.org" }
+/**
+ * The two lines anyone forking this changes first.
+ *
+ * The API is a path, not a host: the page is served by the same worker that
+ * answers it. Point this at an origin if you host the two apart.
+ */
+const site = { name: "Cordice", api: "" }
 ---
 
 <!doctype html>
@@ -124,9 +129,78 @@ const site = { name: "Cordice", api: "https://perch.cordice.org" }
                         if (ms && monitor.ms !== null) ms.textContent = monitor.ms + " ms"
                     }
 
+                    return fetch(api + "/api/history")
+                })
+                .then((response) => (response.ok ? response.json() : Promise.reject()))
+                .then((data) => {
+                    /* The strips are redrawn from real days, or the notice
+                       stays. Leaving invented history under live readings
+                       would be the page's own first lie. */
+                    for (const [id, days] of Object.entries(data.monitors)) {
+                        const row = document.querySelector(
+                            '[data-monitor="' + id + '"]',
+                        )
+                        if (!row) continue
+                        redraw(row, days, data.days)
+                    }
                     document.querySelector("[data-sample]")?.remove()
                 })
                 .catch(() => {})
+
+            /** Rebuilds one strip, padding the window so today is at the right. */
+            function redraw(row, days, window) {
+                const bars = row.querySelector(".bars")
+                if (!bars) return
+
+                const byDay = new Map(days.map((d) => [d.day, d]))
+                /* Cloned rather than created: Astro scopes its styles with a
+                   data-astro-cid attribute, and a span built from scratch
+                   carries none of it — the first version of this drew ninety
+                   invisible bars. */
+                const template = bars.firstElementChild
+                if (!template) return
+
+                bars.replaceChildren(
+                    ...Array.from({ length: window }, (_, i) => {
+                        const date = new Date(
+                            Date.now() - (window - 1 - i) * 86400000,
+                        )
+                            .toISOString()
+                            .slice(0, 10)
+                        const day = byDay.get(date)
+                        const checks = day ? day.up + day.degraded + day.down : 0
+                        const state = !checks
+                            ? "unknown"
+                            : day.down
+                              ? "down"
+                              : day.degraded
+                                ? "degraded"
+                                : "up"
+
+                        const bar = template.cloneNode(false)
+                        bar.classList.remove("up", "degraded", "down", "unknown")
+                        bar.classList.add(state)
+                        bar.title =
+                            date +
+                            (checks
+                                ? " — " + checks + " checks"
+                                : " — no data")
+                        return bar
+                    }),
+                )
+
+                const total = days.reduce(
+                    (n, d) => n + d.up + d.degraded + d.down,
+                    0,
+                )
+                const bad = days.reduce((n, d) => n + d.down, 0)
+                const share = row.querySelector(".share")
+                if (share) {
+                    share.textContent = total
+                        ? (((total - bad) / total) * 100).toFixed(2) + "% available"
+                        : "No data yet"
+                }
+            }
         </script>
 
         <style>

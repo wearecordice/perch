@@ -69,12 +69,24 @@ export default {
         }
 
         if (url.pathname === "/api/history") {
-            const id = url.searchParams.get("monitor")
             const days = Math.min(Number(url.searchParams.get("days") ?? 90), 365)
-            if (!id || !monitors.some((m) => m.id === id)) {
-                return json({ error: "unknown monitor" }, 404)
+            const id = url.searchParams.get("monitor")
+
+            if (id) {
+                if (!monitors.some((m) => m.id === id)) {
+                    return json({ error: "unknown monitor" }, 404)
+                }
+                return json({ monitor: id, days: await history(env.DB, id, days) })
             }
-            return json({ monitor: id, days: await history(env.DB, id, days) })
+
+            /* Every monitor at once. A page drawing ten strips would otherwise
+               make ten round trips to render one screen, and the rows are read
+               together or not at all. */
+            const all: Record<string, unknown> = {}
+            for (const monitor of monitors) {
+                all[monitor.id] = await history(env.DB, monitor.id, days)
+            }
+            return json({ days, monitors: all })
         }
 
         return json({ error: "not found" }, 404)

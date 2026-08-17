@@ -1,0 +1,25 @@
+name = "perch"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Needed by the TCP probe. Without it `cloudflare:sockets` is not there and
+# every tcp monitor fails in a way that looks like the service is down.
+compatibility_flags = ["nodejs_compat"]
+
+# Every five minutes, which is what the tools this replaces do and therefore
+# what makes a fair comparison while all three are running. Cron will go no
+# finer than a minute, and a minute is rarely worth four times the writes.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+# Recorded against every check. One vantage point today; when there are more,
+# each deployment names its own and the database already has the column.
+PERCH_REGION = "auto"
+PERCH_RETENTION_DAYS = "90"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "perch"
+# Filled in by `wrangler d1 create perch`.
+database_id = "REPLACE_ME"

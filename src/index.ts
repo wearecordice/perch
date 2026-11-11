@@ -1,9 +1,11 @@
-import { monitors } from "./monitors"
+import { active as monitors } from "./monitors"
 import { probe } from "./probe"
 import { forget, history, latest, record } from "./store"
 
 export interface Env {
     DB: D1Database
+    /** The built page (site/dist), served for everything that is not /api/*. */
+    ASSETS: Fetcher
     /** Where this worker's probes run from, for the record. See schema.sql. */
     PERCH_REGION?: string
     /** Days of per-probe detail to keep. Day summaries are kept for good. */
@@ -23,6 +25,9 @@ const PRUNE_AT_HOUR = 3
  * wrong interval will state a downtime with great confidence and be wrong.
  */
 const INTERVAL_SECONDS = 300
+
+const HOME_HOST = "status.cordice.org"
+const OLD_HOST = "perch.cordice.org"
 
 export default {
     /** The cron. Everything Perch knows, it learns here. */
@@ -62,6 +67,14 @@ export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         const url = new URL(request.url)
 
+        /* The page's own name is status.cordice.org; perch.cordice.org was its first home and
+           keeps working for anyone who saved it (run_worker_first in wrangler.toml, so this sees
+           the page's requests too, not only /api/*). */
+        if (url.hostname === OLD_HOST) {
+            url.hostname = HOME_HOST
+            return Response.redirect(url.toString(), 301)
+        }
+
         if (url.pathname === "/api/summary") {
             const readings = await latest(env.DB)
             const by = new Map(readings.map((r) => [r.monitor, r]))
@@ -98,7 +111,10 @@ export default {
             return json({ days, interval: INTERVAL_SECONDS, monitors: all })
         }
 
-        return json({ error: "not found" }, 404)
+        if (url.pathname.startsWith("/api/")) {
+            return json({ error: "not found" }, 404)
+        }
+        return env.ASSETS.fetch(request)
     },
 }
 

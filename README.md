@@ -12,8 +12,9 @@ It is small on purpose. Perch collects and answers; it does not render. A
 status page is somebody's design, and every monitoring tool that insisted on
 being a front end as well has had to be fought to look like anything.
 
-> **Status: early.** The collector works and is what this repository currently
-> is. The page that draws it is being written next.
+> **In use** at [status.cordice.org](https://status.cordice.org) — Cordice's public status page
+> (11 November 2026). Alerts to the team come from a separate monitor (Phare) watching the same
+> addresses; a third, GitHub-based record (Upptime) keeps an independent history.
 
 ## What it does
 
@@ -27,11 +28,13 @@ being a front end as well has had to be fought to look like anything.
   year of history is cheap.
 - Answers `/api/summary` and `/api/history` as JSON, for whatever draws them.
 
-## What it does not do yet
+## What it also does
 
-Incidents, alerts, and the page itself. Incidents are meant to live in git as
-files rather than in a database behind an admin login — reviewable, revertable,
-and with no form to secure.
+- Draws the page itself: an overall banner, ninety days of bars per component, days you can open.
+- Incidents as files in git (`site/src/content/incidents/`), with the timeline every status page uses
+  (investigating → identified → monitoring → resolved), and Atom/RSS feeds to subscribe to.
+- Knows a component before it launches (`enabled: false` in `src/monitors.ts`): described, not probed,
+  not shown — so the launch is one line and the id already has its place.
 
 ## Running your own
 

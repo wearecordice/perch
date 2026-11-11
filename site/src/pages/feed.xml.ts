@@ -3,7 +3,7 @@ import { entries, escape } from "../lib/feed"
 
 /** RSS 2.0. The format most readers still speak. */
 export const GET: APIRoute = async ({ site }) => {
-    const origin = (site ?? new URL("https://perch.cordice.org")).origin
+    const origin = (site ?? new URL("https://status.cordice.org")).origin
     const items = await entries(origin)
 
     const body = `<?xml version="1.0" encoding="utf-8"?>

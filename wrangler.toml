@@ -15,6 +15,12 @@ compatibility_flags = ["nodejs_compat"]
 # published there. Registering one is a prerequisite, not a destination.
 workers_dev = false
 
+# status.cordice.org is the page's name (11 November 2026); perch.cordice.org, its first home,
+# answers with a redirect to it (src/index.ts).
+[[routes]]
+pattern = "status.cordice.org"
+custom_domain = true
+
 [[routes]]
 pattern = "perch.cordice.org"
 custom_domain = true
@@ -30,6 +36,10 @@ custom_domain = true
 # domain of its own is then a change to one name and nothing else.
 [assets]
 directory = "./site/dist"
+binding = "ASSETS"
+# The worker sees every request first — to send the old name on to the new one — and hands
+# everything that is not /api/* to the assets.
+run_worker_first = true
 
 [triggers]
 crons = ["*/5 * * * *"]

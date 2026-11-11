@@ -39,6 +39,13 @@ export interface Monitor {
 
     /** Give up after this. Below the runtime's own ceiling, deliberately. */
     timeoutMs?: number
+
+    /**
+     * false: described here but not probed and not shown — a service that has not launched yet.
+     * A red row would say «broken» about something that was never switched on; flipping this to
+     * true (or deleting it) is the whole launch, and its id already has a place in the history.
+     */
+    enabled?: boolean
 }
 
 /** One probe, as it will be written down. */

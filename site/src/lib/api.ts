@@ -7,6 +7,8 @@
  * is reachable, and what the layout was built against.
  */
 
+import { active } from "../../../src/monitors"
+
 export type State = "up" | "degraded" | "down" | "unknown"
 
 export interface MonitorSummary {
@@ -61,18 +63,9 @@ export function overall(monitors: MonitorSummary[]): State {
  * Sample data, drawn until a worker answers. Delete when it does.         *
  * ---------------------------------------------------------------------- */
 
-const NAMES: [string, string, string | null][] = [
-    ["web-client", "Web client", null],
-    ["api", "API", "Accounts, servers, channels and messages."],
-    ["events", "Events", "The live connection that delivers messages."],
-    ["voice", "Voice", "Voice channels, video and screen sharing."],
-    ["file-service", "File service", "Uploads, avatars and attachments."],
-    ["link-previews", "Link previews", null],
-    ["gif-search", "GIF search", null],
-    ["mail", "Mail", "Password resets, reports and anything else we send."],
-    ["website", "Website", null],
-    ["developer-documentation", "Developer documentation", null],
-]
+/* The same list the worker probes (src/monitors.ts), so the page built before any reading arrives
+   shows exactly the components the worker will report. */
+const NAMES: [string, string, string | null][] = active.map((m) => [m.id, m.name, m.description ?? null])
 
 /** Deterministic, so the sample does not flicker between builds. */
 function pseudoRandom(seed: number): () => number {
@@ -89,7 +82,9 @@ export function sampleMonitors(): MonitorSummary[] {
         id: id!,
         name: name!,
         description: description ?? null,
-        state: i === 3 ? ("degraded" as State) : ("up" as State),
+        // Nothing is claimed before a reading arrives: the built page says «checking», never a
+        // made-up state (a sample «degraded» once greeted readers for the first second).
+        state: "unknown" as State,
         at: now - 60,
         ms: 20 + i * 11,
     }))

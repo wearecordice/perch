@@ -8,5 +8,5 @@ import { defineConfig } from "astro/config"
 // reader's subscription will point. Change it with the domain.
 export default defineConfig({
     output: "static",
-    site: "https://perch.cordice.org",
+    site: "https://status.cordice.org",
 })

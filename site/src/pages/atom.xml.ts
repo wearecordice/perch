@@ -9,7 +9,7 @@ import { entries, escape } from "../lib/feed"
  * gained an update — which on a status page is the distinction that matters.
  */
 export const GET: APIRoute = async ({ site }) => {
-    const origin = (site ?? new URL("https://perch.cordice.org")).origin
+    const origin = (site ?? new URL("https://status.cordice.org")).origin
     const items = await entries(origin)
     const updated = items[0]?.updated ?? new Date(0)
 

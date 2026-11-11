@@ -91,7 +91,8 @@ const incidentData = incidents.map((incident) => ({
                 <span class="mark" data-mark>
                     <Icon state={BANNER_ICON[state]} size={44} />
                 </span>
-                <h1 data-headline>{HEADLINE[state]}</h1>
+                {/* Built before any reading exists: say so, rather than a state nobody measured. */}
+                <h1 data-headline>{state === "unknown" ? "Checking status…" : HEADLINE[state]}</h1>
                 <p class="when" data-when>Checking…</p>
             </section>
 
